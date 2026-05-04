@@ -14,12 +14,12 @@ const {
 const axios = require('axios');
 const express = require('express');
 
-// 🌐 Keep alive server (Railway/Replit safe)
+// 🌐 Keep alive server
 const app = express();
 app.get("/", (req, res) => res.send("Bot is alive!"));
 app.listen(3000, () => console.log("🌐 Web server running"));
 
-// 🔥 Create bot
+// 🤖 Bot client
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -27,18 +27,19 @@ const client = new Client({
   ]
 });
 
-// ⛔ Anti-spam cooldown
+// 🔒 Anti-spam system
+let isStarting = false;
 let lastStartTime = 0;
 const COOLDOWN = 30000; // 30 sec
 
-// 📌 Slash command (send panel)
+// 📌 Slash command
 const commands = [
   new SlashCommandBuilder()
     .setName('panel')
     .setDescription('Send server control panel')
 ].map(cmd => cmd.toJSON());
 
-// 🔗 Register command
+// 🔗 Register commands
 const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
 
 (async () => {
@@ -57,7 +58,7 @@ const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
   }
 })();
 
-// 🚀 Function to start server
+// 🚀 Start server function
 async function startServer() {
   return axios.post(
     `${process.env.PANEL_URL}/api/client/servers/${process.env.SERVER_ID}/power`,
@@ -72,7 +73,7 @@ async function startServer() {
   );
 }
 
-// 🎮 Slash command → send button
+// 🎮 Send panel
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
@@ -91,45 +92,78 @@ client.on('interactionCreate', async interaction => {
   }
 });
 
-// 🔘 Button click handler (WITH COOLDOWN)
+// 🔘 Button handler (ANTI-SPAM FIXED)
 client.on('interactionCreate', async interaction => {
   if (!interaction.isButton()) return;
 
   if (interaction.customId === "start_server") {
     const now = Date.now();
 
-    // ⛔ Cooldown check
-    if (now - lastStartTime < COOLDOWN) {
+    // 🔒 Already starting
+    if (isStarting) {
       return interaction.reply({
-        content: "⏳ Server was started recently. Wait a bit.",
+        content: "⏳ Server is already starting!",
         ephemeral: true
       });
     }
 
+    // ⛔ Cooldown
+    if (now - lastStartTime < COOLDOWN) {
+      return interaction.reply({
+        content: "⏳ Please wait before trying again.",
+        ephemeral: true
+      });
+    }
+
+    isStarting = true;
     lastStartTime = now;
 
-    await interaction.reply("⏳ Starting server...");
+    // 🔘 Disable button
+    const disabledButton = new ButtonBuilder()
+      .setCustomId("start_server")
+      .setLabel("Starting...")
+      .setStyle(ButtonStyle.Secondary)
+      .setDisabled(true);
+
+    const row = new ActionRowBuilder().addComponents(disabledButton);
+
+    await interaction.update({
+      content: "⏳ Starting server...",
+      components: [row]
+    });
 
     try {
       await startServer();
-      await interaction.editReply("🚀 Server is starting!");
+
+      await interaction.editReply({
+        content: "🚀 Server is starting!",
+        components: [row]
+      });
+
     } catch (err) {
       console.error("❌ ERROR:", err.response?.data || err);
-      await interaction.editReply("❌ Failed to start server.");
+
+      await interaction.editReply({
+        content: "❌ Failed to start server.",
+        components: []
+      });
     }
+
+    // 🔓 Unlock after cooldown
+    setTimeout(() => {
+      isStarting = false;
+    }, COOLDOWN);
   }
 });
 
 // 🎤 Auto-start when someone joins VC
 client.on('voiceStateUpdate', async (oldState, newState) => {
   if (!oldState.channel && newState.channel) {
-    console.log("👤 User joined VC");
-
     const now = Date.now();
 
-    // ⛔ Prevent spam via VC
-    if (now - lastStartTime < COOLDOWN) return;
+    if (isStarting || now - lastStartTime < COOLDOWN) return;
 
+    isStarting = true;
     lastStartTime = now;
 
     try {
@@ -138,6 +172,10 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
     } catch (err) {
       console.error("❌ Auto-start error:", err.response?.data || err);
     }
+
+    setTimeout(() => {
+      isStarting = false;
+    }, COOLDOWN);
   }
 });
 
