@@ -99,7 +99,7 @@ client.on('interactionCreate', async interaction => {
   if (interaction.customId === "start_server") {
     const now = Date.now();
 
-    // 🔒 Already starting
+    // 🚫 HARD LOCK (this is the key fix)
     if (isStarting) {
       return interaction.reply({
         content: "⏳ Server is already starting!",
@@ -107,7 +107,6 @@ client.on('interactionCreate', async interaction => {
       });
     }
 
-    // ⛔ Cooldown
     if (now - lastStartTime < COOLDOWN) {
       return interaction.reply({
         content: "⏳ Please wait before trying again.",
@@ -115,41 +114,28 @@ client.on('interactionCreate', async interaction => {
       });
     }
 
+    // 🔒 LOCK IMMEDIATELY (before anything async)
     isStarting = true;
     lastStartTime = now;
 
-    // 🔘 Disable button
-    const disabledButton = new ButtonBuilder()
-      .setCustomId("start_server")
-      .setLabel("Starting...")
-      .setStyle(ButtonStyle.Secondary)
-      .setDisabled(true);
-
-    const row = new ActionRowBuilder().addComponents(disabledButton);
-
-    await interaction.update({
-      content: "⏳ Starting server...",
-      components: [row]
-    });
-
     try {
+      // reply immediately (no delay)
+      await interaction.reply({
+        content: "⏳ Starting server...",
+        ephemeral: false
+      });
+
       await startServer();
 
-      await interaction.editReply({
-        content: "🚀 Server is starting!",
-        components: [row]
-      });
+      await interaction.editReply("🚀 Server is starting!");
 
     } catch (err) {
-      console.error("❌ ERROR:", err.response?.data || err);
+      console.error(err.response?.data || err);
 
-      await interaction.editReply({
-        content: "❌ Failed to start server.",
-        components: []
-      });
+      await interaction.editReply("❌ Failed to start server.");
     }
 
-    // 🔓 Unlock after cooldown
+    // 🔓 unlock after cooldown
     setTimeout(() => {
       isStarting = false;
     }, COOLDOWN);
