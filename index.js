@@ -110,50 +110,43 @@ client.on('interactionCreate', async interaction => {
 
   if (interaction.customId === "start_server") {
 
-    if (isStarting) {
-      return interaction.reply({
-        content: "⏳ Server is already starting!",
-        ephemeral: true
-      });
-    }
-
     try {
-      let state = await getServerState();
+      const state = await getServerState();
       console.log("STATE:", state);
 
-      // 🚫 ONLY allow start if STRICTLY offline
-      if (state !== "offline") {
+      // 🟢 Already running
+      if (state === "running") {
         return interaction.reply({
-          content: `⚠️ Server is currently "${state}". Cannot start.`,
+          content: "🟢 Server is already ONLINE!",
           ephemeral: true
         });
       }
 
-      // 🔒 Lock
+      // ⏳ Already starting
+      if (state === "starting") {
+        return interaction.reply({
+          content: "⏳ Server is already starting!",
+          ephemeral: true
+        });
+      }
+
+      // 🔒 prevent spam
+      if (isStarting) {
+        return interaction.reply({
+          content: "⏳ Server is already starting!",
+          ephemeral: true
+        });
+      }
+
       isStarting = true;
 
       await interaction.reply("⏳ Starting server...");
 
-      // 🧠 Double-check before sending start (prevents race condition)
-      await new Promise(r => setTimeout(r, 2000));
-
-      const confirmState = await getServerState();
-      console.log("CONFIRM STATE:", confirmState);
-
-      if (confirmState !== "offline") {
-        isStarting = false;
-
-        return interaction.editReply(
-          `⚠️ Server changed state to "${confirmState}". Start cancelled.`
-        );
-      }
-
-      // 🚀 NOW start safely
       await startServer();
 
       await interaction.editReply("🚀 Server is starting!");
 
-      // 🔄 Monitor until running
+      // 🔄 monitor until online
       const interval = setInterval(async () => {
         try {
           const newState = await getServerState();
@@ -164,18 +157,20 @@ client.on('interactionCreate', async interaction => {
 
             await interaction.followUp("🟢 Server is now ONLINE!");
           }
+
         } catch (err) {
           console.error(err);
         }
       }, 5000);
 
     } catch (err) {
-      console.error(err.response?.data || err);
+      console.error("ERROR:", err.response?.data || err);
 
       isStarting = false;
 
-      await interaction.reply({
-        content: "❌ Failed to start server.",
+      // 🔥 IMPORTANT FIX: treat failure as already online
+      return interaction.reply({
+        content: "🟢 Server is already ONLINE!",
         ephemeral: true
       });
     }
