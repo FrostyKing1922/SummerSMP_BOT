@@ -110,11 +110,18 @@ client.on('interactionCreate', async interaction => {
 
   if (interaction.customId === "start_server") {
 
+    if (isStarting) {
+      return interaction.reply({
+        content: "⏳ Server is already starting!",
+        ephemeral: true
+      });
+    }
+
     try {
       const state = await getServerState();
       console.log("STATE:", state);
 
-      // 🟢 Already running
+      // 🟢 Running
       if (state === "running") {
         return interaction.reply({
           content: "🟢 Server is already ONLINE!",
@@ -122,16 +129,8 @@ client.on('interactionCreate', async interaction => {
         });
       }
 
-      // ⏳ Already starting
+      // ⏳ Starting
       if (state === "starting") {
-        return interaction.reply({
-          content: "⏳ Server is already starting!",
-          ephemeral: true
-        });
-      }
-
-      // 🔒 prevent spam
-      if (isStarting) {
         return interaction.reply({
           content: "⏳ Server is already starting!",
           ephemeral: true
@@ -146,31 +145,41 @@ client.on('interactionCreate', async interaction => {
 
       await interaction.editReply("🚀 Server is starting!");
 
-      // 🔄 monitor until online
-      const interval = setInterval(async () => {
-        try {
-          const newState = await getServerState();
-
-          if (newState === "running") {
-            clearInterval(interval);
-            isStarting = false;
-
-            await interaction.followUp("🟢 Server is now ONLINE!");
-          }
-
-        } catch (err) {
-          console.error(err);
-        }
-      }, 5000);
+      isStarting = false;
 
     } catch (err) {
-      console.error("ERROR:", err.response?.data || err);
+      console.error("FULL ERROR:", err.response?.data || err);
 
       isStarting = false;
 
-      // 🔥 IMPORTANT FIX: treat failure as already online
+      const errorCode = err.response?.data?.errors?.[0]?.code;
+      const errorMsg = err.response?.data?.errors?.[0]?.detail || "";
+
+      // 🔴 LIMBO (important fix)
+      if (
+        errorCode === "ServerStateConflictException" &&
+        errorMsg.toLowerCase().includes("not assigned to a node")
+      ) {
+        return interaction.reply({
+          content: "⚠️ Server is in limbo (not ready). Please wait or contact host.",
+          ephemeral: true
+        });
+      }
+
+      // 🟢 Already running (safe cases only)
+      if (
+        errorCode === "InvalidStateException" ||
+        errorMsg.toLowerCase().includes("already running")
+      ) {
+        return interaction.reply({
+          content: "🟢 Server is already ONLINE!",
+          ephemeral: true
+        });
+      }
+
+      // ❌ Real error
       return interaction.reply({
-        content: "🟢 Server is already ONLINE!",
+        content: "❌ Failed to start server.",
         ephemeral: true
       });
     }
