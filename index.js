@@ -120,15 +120,15 @@ client.on('interactionCreate', async interaction => {
     try {
       const state = await getServerState();
 
-      // 🟢 Already running
+      // 🟢 BLOCK if already running
       if (state === "running") {
         return interaction.reply({
-          content: "🟢 Server is already running!",
+          content: "🟢 Server is already ONLINE! No need to start again.",
           ephemeral: true
         });
       }
 
-      // ⏳ Already starting
+      // ⏳ BLOCK if already starting
       if (state === "starting") {
         return interaction.reply({
           content: "⏳ Server is already starting!",
@@ -145,7 +145,7 @@ client.on('interactionCreate', async interaction => {
 
       await interaction.editReply("🚀 Server is starting!");
 
-      // 🔄 Check until running
+      // 🔄 Wait until fully running
       const interval = setInterval(async () => {
         try {
           const newState = await getServerState();
