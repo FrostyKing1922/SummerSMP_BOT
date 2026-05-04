@@ -17,7 +17,11 @@ const express = require('express');
 // 🌐 Keep alive server
 const app = express();
 app.get("/", (req, res) => res.send("Bot is alive!"));
-app.listen(3000, () => console.log("🌐 Web server running"));
+const PORT = process.env.PORT || 3000;
+
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`🌐 Web server running on port ${PORT}`);
+});
 
 // 🤖 Bot client
 const client = new Client({
