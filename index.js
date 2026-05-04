@@ -109,7 +109,7 @@ client.on('interactionCreate', async interaction => {
   if (!interaction.isButton()) return;
 
   if (interaction.customId === "start_server") {
-    // 🔒 Lock check
+
     if (isStarting) {
       return interaction.reply({
         content: "⏳ Server is already starting!",
@@ -118,20 +118,13 @@ client.on('interactionCreate', async interaction => {
     }
 
     try {
-      const state = await getServerState();
+      let state = await getServerState();
+      console.log("STATE:", state);
 
-      // 🟢 BLOCK if already running
-      if (state === "running") {
+      // 🚫 ONLY allow start if STRICTLY offline
+      if (state !== "offline") {
         return interaction.reply({
-          content: "🟢 Server is already ONLINE! No need to start again.",
-          ephemeral: true
-        });
-      }
-
-      // ⏳ BLOCK if already starting
-      if (state === "starting") {
-        return interaction.reply({
-          content: "⏳ Server is already starting!",
+          content: `⚠️ Server is currently "${state}". Cannot start.`,
           ephemeral: true
         });
       }
@@ -141,11 +134,26 @@ client.on('interactionCreate', async interaction => {
 
       await interaction.reply("⏳ Starting server...");
 
+      // 🧠 Double-check before sending start (prevents race condition)
+      await new Promise(r => setTimeout(r, 2000));
+
+      const confirmState = await getServerState();
+      console.log("CONFIRM STATE:", confirmState);
+
+      if (confirmState !== "offline") {
+        isStarting = false;
+
+        return interaction.editReply(
+          `⚠️ Server changed state to "${confirmState}". Start cancelled.`
+        );
+      }
+
+      // 🚀 NOW start safely
       await startServer();
 
       await interaction.editReply("🚀 Server is starting!");
 
-      // 🔄 Wait until fully running
+      // 🔄 Monitor until running
       const interval = setInterval(async () => {
         try {
           const newState = await getServerState();
@@ -156,7 +164,6 @@ client.on('interactionCreate', async interaction => {
 
             await interaction.followUp("🟢 Server is now ONLINE!");
           }
-
         } catch (err) {
           console.error(err);
         }
