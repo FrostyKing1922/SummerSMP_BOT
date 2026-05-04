@@ -91,15 +91,25 @@ client.on('interactionCreate', async interaction => {
     });
   }
 });
+async function getServerState() {
+  const res = await axios.get(
+    `${process.env.PANEL_URL}/api/client/servers/${process.env.SERVER_ID}/resources`,
+    {
+      headers: {
+        Authorization: `Bearer ${process.env.API_KEY}`,
+        Accept: "Application/vnd.pterodactyl.v1+json"
+      }
+    }
+  );
 
+  return res.data.attributes.current_state;
+}
 // 🔘 Button handler (ANTI-SPAM FIXED)
 client.on('interactionCreate', async interaction => {
   if (!interaction.isButton()) return;
 
   if (interaction.customId === "start_server") {
-    const now = Date.now();
-
-    // 🚫 HARD LOCK (this is the key fix)
+    // 🔒 Lock check
     if (isStarting) {
       return interaction.reply({
         content: "⏳ Server is already starting!",
@@ -107,41 +117,63 @@ client.on('interactionCreate', async interaction => {
       });
     }
 
-    if (now - lastStartTime < COOLDOWN) {
-      return interaction.reply({
-        content: "⏳ Please wait before trying again.",
-        ephemeral: true
-      });
-    }
-
-    // 🔒 LOCK IMMEDIATELY (before anything async)
-    isStarting = true;
-    lastStartTime = now;
-
     try {
-      // reply immediately (no delay)
-      await interaction.reply({
-        content: "⏳ Starting server...",
-        ephemeral: false
-      });
+      const state = await getServerState();
+
+      // 🟢 Already running
+      if (state === "running") {
+        return interaction.reply({
+          content: "🟢 Server is already running!",
+          ephemeral: true
+        });
+      }
+
+      // ⏳ Already starting
+      if (state === "starting") {
+        return interaction.reply({
+          content: "⏳ Server is already starting!",
+          ephemeral: true
+        });
+      }
+
+      // 🔒 Lock
+      isStarting = true;
+
+      await interaction.reply("⏳ Starting server...");
 
       await startServer();
 
       await interaction.editReply("🚀 Server is starting!");
 
+      // 🔄 Check until running
+      const interval = setInterval(async () => {
+        try {
+          const newState = await getServerState();
+
+          if (newState === "running") {
+            clearInterval(interval);
+            isStarting = false;
+
+            await interaction.followUp("🟢 Server is now ONLINE!");
+          }
+
+        } catch (err) {
+          console.error(err);
+        }
+      }, 5000);
+
     } catch (err) {
       console.error(err.response?.data || err);
 
-      await interaction.editReply("❌ Failed to start server.");
-    }
-
-    // 🔓 unlock after cooldown
-    setTimeout(() => {
       isStarting = false;
-    }, COOLDOWN);
+
+      await interaction.reply({
+        content: "❌ Failed to start server.",
+        ephemeral: true
+      });
+    }
   }
 });
-
 // 🎤 Auto-start when someone joins VC
 client.on('voiceStateUpdate', async (oldState, newState) => {
   if (!oldState.channel && newState.channel) {
