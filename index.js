@@ -14,6 +14,7 @@ const {
 const axios = require('axios');
 const express = require('express');
 
+// 🌐 Keep alive server (Railway/Replit safe)
 const app = express();
 app.get("/", (req, res) => res.send("Bot is alive!"));
 app.listen(3000, () => console.log("🌐 Web server running"));
@@ -26,7 +27,11 @@ const client = new Client({
   ]
 });
 
-// 📌 Slash command (to send button)
+// ⛔ Anti-spam cooldown
+let lastStartTime = 0;
+const COOLDOWN = 30000; // 30 sec
+
+// 📌 Slash command (send panel)
 const commands = [
   new SlashCommandBuilder()
     .setName('panel')
@@ -37,15 +42,19 @@ const commands = [
 const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
 
 (async () => {
-  await rest.put(
-    Routes.applicationGuildCommands(
-      process.env.CLIENT_ID,
-      process.env.GUILD_ID
-    ),
-    { body: commands }
-  );
+  try {
+    await rest.put(
+      Routes.applicationGuildCommands(
+        process.env.CLIENT_ID,
+        process.env.GUILD_ID
+      ),
+      { body: commands }
+    );
 
-  console.log("✅ Commands registered");
+    console.log("✅ Commands registered");
+  } catch (err) {
+    console.error("❌ Command registration error:", err);
+  }
 })();
 
 // 🚀 Function to start server
@@ -82,43 +91,55 @@ client.on('interactionCreate', async interaction => {
   }
 });
 
-// 🔘 Button click
+// 🔘 Button click handler (WITH COOLDOWN)
 client.on('interactionCreate', async interaction => {
   if (!interaction.isButton()) return;
 
   if (interaction.customId === "start_server") {
+    const now = Date.now();
+
+    // ⛔ Cooldown check
+    if (now - lastStartTime < COOLDOWN) {
+      return interaction.reply({
+        content: "⏳ Server was started recently. Wait a bit.",
+        ephemeral: true
+      });
+    }
+
+    lastStartTime = now;
+
     await interaction.reply("⏳ Starting server...");
 
     try {
       await startServer();
       await interaction.editReply("🚀 Server is starting!");
     } catch (err) {
-      console.error(err.response?.data || err);
+      console.error("❌ ERROR:", err.response?.data || err);
       await interaction.editReply("❌ Failed to start server.");
     }
   }
 });
 
-// 🎤 AUTO START WHEN SOMEONE JOINS VC
+// 🎤 Auto-start when someone joins VC
 client.on('voiceStateUpdate', async (oldState, newState) => {
-  // joined a VC
   if (!oldState.channel && newState.channel) {
-    console.log("👤 Someone joined VC");
+    console.log("👤 User joined VC");
+
+    const now = Date.now();
+
+    // ⛔ Prevent spam via VC
+    if (now - lastStartTime < COOLDOWN) return;
+
+    lastStartTime = now;
 
     try {
       await startServer();
       console.log("🚀 Auto-start triggered");
     } catch (err) {
-      console.error("Auto-start error:", err.response?.data || err);
+      console.error("❌ Auto-start error:", err.response?.data || err);
     }
   }
 });
-let lastStart = 0;
 
-async function safeStart() {
-  if (Date.now() - lastStart < 30000) return;
-  lastStart = Date.now();
-  return startServer();
-}
 // 🔑 Login
 client.login(process.env.TOKEN);
