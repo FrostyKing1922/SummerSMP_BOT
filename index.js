@@ -191,26 +191,46 @@ client.on('interactionCreate', async interaction => {
 });
 // 🎤 Auto-start when someone joins VC
 client.on('voiceStateUpdate', async (oldState, newState) => {
+  // only trigger when someone joins a VC
   if (!oldState.channel && newState.channel) {
-    const now = Date.now();
-
-    if (isStarting || now - lastStartTime < COOLDOWN) return;
-
-    isStarting = true;
-    lastStartTime = now;
-
     try {
-      await startServer();
-      console.log("🚀 Auto-start triggered");
-    } catch (err) {
-      console.error("❌ Auto-start error:", err.response?.data || err);
-    }
+      const state = await getServerState();
+      console.log("VC STATE:", state);
 
-    setTimeout(() => {
+      // 🟢 Already running → DO NOTHING
+      if (state === "running") {
+        console.log("🟢 Server already online — no action");
+        return;
+      }
+
+      // ⏳ Already starting → DO NOTHING
+      if (state === "starting") {
+        console.log("⏳ Server already starting — no action");
+        return;
+      }
+
+      // 🔒 Prevent spam
+      if (isStarting) {
+        console.log("🔒 Already triggering start");
+        return;
+      }
+
+      isStarting = true;
+
+      console.log("🚀 Auto-start triggered by VC");
+
+      await startServer();
+
+      // unlock after short delay
+      setTimeout(() => {
+        isStarting = false;
+      }, 30000);
+
+    } catch (err) {
+      console.error("❌ VC auto-start error:", err.response?.data || err);
       isStarting = false;
-    }, COOLDOWN);
+    }
   }
 });
-
 // 🔑 Login
 client.login(process.env.TOKEN);
